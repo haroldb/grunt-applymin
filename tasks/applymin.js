@@ -23,8 +23,8 @@ module.exports = function(grunt) {
       // case insensitive for html tags.
       cssPattern: /<link[\s\S]+?href\s*=\s*['"][\s\S]+?\.css[\s\S]+?>/gi,
       jsPattern: /<script[\s\S]+?src\s*=\s*['"][\s\S]+?\.js[\s\S]+?>/gi,
-      beginminPattern_global: /<!--\s*beginmin:\s*(\S+)\s*-->([\s\S]*?)<!--\s*endmin\s*-->/g,
-      beginminPattern: /<!--\s*beginmin:\s*(\S+)\s*-->([\s\S]*?)<!--\s*endmin\s*-->/
+      beginminPattern_global: /<!--\s*beginmin:\s*([\s\S]+?)\s*-->([\s\S]*?)<!--\s*endmin\s*-->/g,
+      beginminPattern: /<!--\s*beginmin:\s*([\s\S]+?)\s*-->([\s\S]*?)<!--\s*endmin\s*-->/
   };
 
 
