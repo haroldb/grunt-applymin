@@ -20,6 +20,7 @@ module.exports = function(grunt) {
       beginminInfos: {}, // store all the html template names as the key, and the {targetFilePath:{targetUrlPath, beginEndMinBlock}} as the values.
       // self defined staticPattern
       staticPattern: null,
+      destPath: '',
       // case insensitive for html tags.
       cssPattern: /<link[\s\S]+?href\s*=\s*['"][\s\S]+?\.css[\s\S]+?>/gi,
       jsPattern: /<script[\s\S]+?src\s*=\s*['"][\s\S]+?\.js[\s\S]+?>/gi,
@@ -31,26 +32,32 @@ module.exports = function(grunt) {
   // Please see the Grunt documentation for more information regarding task
   // creation: http://gruntjs.com/creating-tasks
 
+  var _getFullPath = function (path) {
+    return applyminGlobal.destPath + '/' + path;
+  };
+
     // Put all the css or js files in one static block to the coressponding files object.
-    var _fillUpGruntFilesWithPattern = function (abspath, targetFilePath, pattern, files, staticBlock) {
-        if (targetFilePath in files) {
-            grunt.warn('In the file: ' + abspath + ', the target filename: ' + targetFilePath + ' has already defined in this or other html template file.');
+    var _fillUpGruntFilesWithPattern = function (abspath, fullTargetFilePath, pattern, files, staticBlock) {
+        if (fullTargetFilePath in files) {
+            grunt.warn('In the file: ' + abspath + ', the target filename: ' + fullTargetFilePath + ' has already defined in this or other html template file.');
         }
         var results = staticBlock.match(pattern);
         if (results) {
-            files[targetFilePath] = [];
+            files[fullTargetFilePath] = [];
             for (var index in results) {
                 // results[index] could be like below, use staticPattern to fetch real static filepath further.
                 // <link href="${request.static_url('zuoyeproject:static/css/bootstrap.css')}" rel="stylesheet" media="screen">
                 // <script src="${request.static_url('zuoyeproject:static/editor/common.js')}">
-                var result = results[index].match(applyminGlobal.staticPattern);
+                var result = results[index].match(applyminGlobal.staticPattern),
+                    fullPath;
                 if (result === null || result.length < 2) {
                     grunt.warn('Please check whether your "options.staticPattern": ' + applyminGlobal.staticPattern + '\n\ncould be used to fetch the static resource:\n\n' + results[index] + '\n\nin the file ' + '"' + abspath + '"');
                 }
-                if (!grunt.file.exists(result[1])) {
-                    grunt.warn('This file does not exist: "' + result[1] + '"');
+                fullPath = _getFullPath(result[1]);
+                if (!grunt.file.exists(fullPath)) {
+                    grunt.warn('This file does not exist: "' + fullPath + '"');
                 }
-                files[targetFilePath].push(result[1]);
+                files[fullTargetFilePath].push(fullPath);
             }
         }
     };
@@ -67,6 +74,7 @@ module.exports = function(grunt) {
     // determine the css or js type.
     var files = null;
     var pattern = null;
+    var fullTargetFilePath = _getFullPath(targetFilePath);
 
     if (targetFilePath.match(/\.css$/i)) {
         pattern = applyminGlobal.cssPattern;
@@ -75,12 +83,12 @@ module.exports = function(grunt) {
         pattern = applyminGlobal.jsPattern;
         files = applyminGlobal.concatFiles;
         // One more step for the js file: The js file will be uglified further.
-        applyminGlobal.uglifyFiles[targetFilePath] = targetFilePath;
+        applyminGlobal.uglifyFiles[fullTargetFilePath] = fullTargetFilePath;
     }
-    applyminGlobal.revFiles.push(targetFilePath);
+    applyminGlobal.revFiles.push(fullTargetFilePath);
 
     // handle css or js
-    _fillUpGruntFilesWithPattern(abspath, targetFilePath, pattern, files, staticBlock);
+    _fillUpGruntFilesWithPattern(abspath, fullTargetFilePath, pattern, files, staticBlock);
   };
 
   // Change 'assets/mdeditor.min.js' to 'assets/' and 'mdeditor.min.js'
@@ -97,7 +105,7 @@ module.exports = function(grunt) {
    * srcFiles: contains all template path like views/home.tpl
    * destPath: the destination path that will be used to store all the result files like 'static/assets'
    */
-  var _beginmin = function (srcFiles, destPath) {
+  var _beginmin = function (srcFiles) {
     // Iterate over all specified file groups.
     srcFiles.map(grunt.file.read).forEach(function (fileContent, i) {
         var abspath = srcFiles[i];
@@ -109,9 +117,9 @@ module.exports = function(grunt) {
                 var beginEndMinBlock = result[0];
                 var targetUrlPath = result[1];
                 var staticBlock = result[2];  // static block, maybe css/js
-                var targetFilePath = targetUrlPath.match(new RegExp(destPath + '/' + '\\S+\\.(css|js)', 'i'));
+                var targetFilePath = targetUrlPath.match(applyminGlobal.staticPattern);
                 if (!targetFilePath) {
-                    grunt.warn('In the file: ' + abspath + ', the target filename in ' + targetUrlPath + ' should start with ' + destPath + '/' + ' and end with .css or .js');
+                    grunt.warn('Please check whether your "options.staticPattern": ' + applyminGlobal.staticPattern + '\n\ncould be used to fetch the static resource:\n\n' + targetUrlPath + '\n\nin the file ' + '"' + abspath + '"');
                 }
                 targetFilePath = targetFilePath[0];
                 _handleStaticBlock(abspath, targetFilePath, staticBlock);
@@ -143,25 +151,26 @@ module.exports = function(grunt) {
     var revTargetFilePath = null;
     var revTargetFileModifyTime = null;
     for (var index in abspaths) {
-        if (abspaths[index].match(filenamePattern)) { // there could be more than one revision files matched filenamePattern
+        var revMatch = abspaths[index].match(filenamePattern);
+        if (revMatch) { // there could be more than one revision files matched filenamePattern
             // match the first revision file.
             if (revTargetFilePath === null) {
-                revTargetFilePath = abspaths[index];
+                revTargetFilePath = revMatch;
             // match the one more revision files, pick up the latest files.
             } else {
                 if (revTargetFileModifyTime === null) {
-                    revTargetFileModifyTime = fs.lstatSync(revTargetFilePath).mtime;
+                    revTargetFileModifyTime = fs.lstatSync(_getFullPath(revTargetFilePath)).mtime;
                 }
                 var currentFileModifyTime = fs.lstatSync(abspaths[index]).mtime;
                 if (currentFileModifyTime > revTargetFileModifyTime) {
-                    revTargetFilePath = abspaths[index];
+                    revTargetFilePath = revMatch;
                     revTargetFileModifyTime = currentFileModifyTime;
                 }
             }
         }
     }
     if (revTargetFilePath === null) {
-        grunt.warn('In the file: ' + templateFilename + ', the target filename: ' + targetFilePath + ' has not been handled to produce a corresponding revision file.');
+        grunt.warn('The target filename: ' + targetFilePath + ' has not been handled to produce a corresponding revision file.');
     }
     return revTargetFilePath;
   };
@@ -239,11 +248,17 @@ module.exports = function(grunt) {
           // default value
           staticPattern: /['"](.*?\.(css|js))['"]/i
       });
+
+      if (!grunt.file.exists(destPath)) {
+        grunt.warn('The output folder: ' + destPath + ' does not exist.');
+      }
+      applyminGlobal.destPath = destPath;
+
       if (this.target === 'beginmin') {
 
           applyminGlobal.staticPattern = options.staticPattern;
           srcFiles = grunt.file.expand(srcFiles);
-          _beginmin(srcFiles, destPath);
+          _beginmin(srcFiles);
 
           // Get concat/uglify/cssmin, set key named 'applyminFiles' with filled files and write back to config.
           var concat = grunt.config('concat') || {};
@@ -263,9 +278,6 @@ module.exports = function(grunt) {
           grunt.config('cssmin', cssmin);
           grunt.config('rev', rev);
       } else if (this.target === 'endmin') {
-          if (!grunt.file.exists(destPath)) {
-              grunt.warn('The output folder: ' + destPath + ' does not exist.');
-          }
           _endmin(destPath);
       }
   });
